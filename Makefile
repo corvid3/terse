@@ -14,3 +14,6 @@ endif
 
 install:
 	cp terse.hh $(install_path)/terse.hh
+
+test:
+	g++ -std=c++23 test.cc -o test.out -g
