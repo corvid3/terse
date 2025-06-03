@@ -7,11 +7,11 @@ endif
 endif
 
 ifdef BUILD_LINUX
-install_path=/usr/local/include/
+install_path=/usr/local/include
 endif
 
 ifdef BUILD_WINDOWS
-install_path=/usr/x86_64-w64-mingw32/usr/include/
+install_path=/usr/x86_64-w64-mingw32/usr/include
 endif
 
 install:

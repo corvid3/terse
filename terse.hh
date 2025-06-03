@@ -197,8 +197,6 @@ class _impl
     std::apply(
       [&](auto&&... opts) {
         if (not([&]<typename OPT>(OPT const& opt) -> bool {
-              std::cout << std::format("<{}>, <{}>\n", OPT::longhand, longhand);
-
               if (OPT::longhand != longhand)
                 return false;
 
@@ -242,6 +240,8 @@ class _impl
       if (not tok.is_opt)
         break;
 
+      toks.pop();
+
       {
         std::string_view longhand;
 
@@ -253,8 +253,6 @@ class _impl
 
         apply_longhand(toks, &cmd, longhand);
       }
-
-      toks.pop();
     }
 
     // just return the subcommand and the

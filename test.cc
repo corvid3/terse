@@ -19,11 +19,13 @@ struct Foo : terse::TerminalSubcommand
 struct ToplevelOptions : terse::NonterminalSubcommand
 {
   bool verbose = false;
+  int m = 0;
   std::string pathing;
 
   using options = std::tuple<
     terse::
       Option<"verbose", 'v', "prints verbosely", &ToplevelOptions::verbose>,
+    terse::Option<"mem", 'm', "aa", &ToplevelOptions::m>,
     terse::Option<"path", 'p', "sets path", &ToplevelOptions::pathing>>;
 
   using subcommands = std::tuple<Foo>;
