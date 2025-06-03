@@ -1,3 +1,5 @@
+# TODO: make this install file not garbage
+
 ifndef BUILD_LINUX
 ifndef BUILD_WINDOWS
 $(error expected either BUILD_LINUX or BUILD_WINDOWS)

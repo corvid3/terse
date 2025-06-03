@@ -144,6 +144,10 @@ class _impl
     auto const tok = toks.front();
     toks.pop();
 
+    if (tok.is_opt)
+      throw std::runtime_error(
+        std::format("expected string literal after option {}", longhand));
+
     opts->*ptr = std::string(tok.what);
   }
 
@@ -169,6 +173,10 @@ class _impl
 
     auto const tok = toks.front();
     toks.pop();
+
+    if (tok.is_opt)
+      throw std::runtime_error(
+        std::format("expected integer literal after option {}", longhand));
 
     T val;
     if (std::from_chars(&*tok.what.begin(), &*tok.what.end(), val).ec ==
