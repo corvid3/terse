@@ -226,7 +226,8 @@ class _impl
 
   template<is_nonterminal_subcommand COMMAND>
   std::pair<COMMAND, tuple_to_variant<COMMAND>> static parse(
-    std::queue<Token>& toks)
+    std::queue<Token>& toks,
+    std::vector<std::string>& out_bares)
   {
     COMMAND cmd;
 
@@ -268,7 +269,7 @@ class _impl
       [&](auto&&... scmds) {
         if (not(... || [&]<typename SCMD>(SCMD const&) {
               if (SCMD::name == scmd_text) {
-                subcommands = parse<SCMD>(toks);
+                subcommands = parse<SCMD>(toks, out_bares);
                 return true;
               }
               return false;
@@ -283,11 +284,10 @@ class _impl
   }
 
   template<is_terminal_subcommand COMMAND>
-  std::pair<COMMAND, std::vector<std::string>> static parse(
-    std::queue<Token>& toks)
+  COMMAND static parse(std::queue<Token>& toks,
+                       std::vector<std::string>& out_bares)
   {
     COMMAND cmd;
-    std::vector<std::string> bares;
 
     // attempt to parse all options
 
@@ -313,10 +313,10 @@ class _impl
 
         apply_longhand(toks, &cmd, longhand);
       } else
-        bares.push_back(std::string(tok.what));
+        out_bares.push_back(std::string(tok.what));
     }
 
-    return { cmd, bares };
+    return cmd;
   }
 
   template<typename TOPLEVEL_SUBCOMMAND>
@@ -327,8 +327,12 @@ template<typename TOPLEVEL_SUBCOMMAND>
 auto
 execute(int argc, char** argv)
 {
-  using out_type = decltype(_impl::parse<TOPLEVEL_SUBCOMMAND>(
-    std::declval<std::queue<_impl::Token>&>()));
+  using out_type_inner = decltype(_impl::parse<TOPLEVEL_SUBCOMMAND>(
+    std::declval<std::queue<_impl::Token>&>(),
+    std::declval<std::vector<std::string>&>()));
+
+  using out_type = decltype(std::tuple_cat(
+    std::declval<out_type_inner>(), std::tuple(std::vector<std::string>())));
 
   if (argc == 0)
     throw std::runtime_error("malformed argc in terse parse");
@@ -344,7 +348,14 @@ execute(int argc, char** argv)
   // TODO: if -h or --help is detected in any of
   // the arguments, print usage
 
-  return _impl::parse<TOPLEVEL_SUBCOMMAND>(tok_queue);
+  // do some jank where we thread the bares vector through
+  // the parsing stack, because bares may only
+  // appear after a terminal subcommand, but arguments
+  // can appear anywhere
+  std::vector<std::string> bares;
+  auto&& [lhs, rhs] = _impl::parse<TOPLEVEL_SUBCOMMAND>(tok_queue, bares);
+
+  return out_type{ lhs, rhs, bares };
 }
 
 template<typename CMD>

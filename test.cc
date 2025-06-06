@@ -37,7 +37,7 @@ struct ToplevelOptions : terse::NonterminalSubcommand
 int
 main(int argc, char** argv)
 {
-  auto [opts, scmds] = terse::execute<ToplevelOptions>(argc, argv);
+  auto [opts, scmds, bares] = terse::execute<ToplevelOptions>(argc, argv);
 
   std::cout << std::format("tl verbose: {}\n", opts.verbose);
 
