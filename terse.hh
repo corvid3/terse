@@ -7,6 +7,7 @@
 #include <iostream>
 #include <optional>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -282,7 +283,8 @@ class _impl
   }
 
   template<is_terminal_subcommand COMMAND>
-  COMMAND static parse(std::queue<Token>& toks)
+  std::pair<COMMAND, std::vector<std::string>> static parse(
+    std::queue<Token>& toks)
   {
     COMMAND cmd;
     std::vector<std::string> bares;
@@ -310,10 +312,11 @@ class _impl
           longhand = tok.what;
 
         apply_longhand(toks, &cmd, longhand);
-      }
+      } else
+        bares.push_back(std::string(tok.what));
     }
 
-    return cmd;
+    return { cmd, bares };
   }
 
   template<typename TOPLEVEL_SUBCOMMAND>
@@ -342,6 +345,43 @@ execute(int argc, char** argv)
   // the arguments, print usage
 
   return _impl::parse<TOPLEVEL_SUBCOMMAND>(tok_queue);
+}
+
+template<typename CMD>
+std::string
+print_usage()
+{
+  auto constexpr cmd_name = CMD::name;
+  auto constexpr cmd_usage = CMD::usage;
+
+  std::stringstream what;
+
+  if (std::apply([]<typename... Ts>(Ts&&...) { return sizeof...(Ts); },
+                 typename CMD::subcommands()) > 0) {
+    what << std::format("USAGE: {} [subcommand] [arguments]\n", cmd_name);
+  } else {
+    what << std::format("USAGE: {} [arguments]\n", cmd_name);
+  }
+
+  what << cmd_usage << "\n\n";
+
+  what << "subcommands:\n";
+
+  std::apply(
+    [&]<typename... SCMDS>(SCMDS&&...) {
+      (what << ... << std::format("\t{}\n", SCMDS::name));
+    },
+    typename CMD::subcommands());
+
+  what << "\noptions:\n";
+
+  std::apply(
+    [&]<typename... OPTS>(OPTS&&...) {
+      (what << ... << std::format("\t--{}\t{}\n", OPTS::longhand, OPTS::usage));
+    },
+    typename CMD::options());
+
+  return what.str();
 }
 
 };

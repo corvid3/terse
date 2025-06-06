@@ -7,7 +7,7 @@
 
 struct Foo : terse::TerminalSubcommand
 {
-  constexpr static terse::comptime_str name = "foo";
+  constexpr static auto name = "foo";
 
   bool inner_verbose = false;
 
@@ -29,6 +29,9 @@ struct ToplevelOptions : terse::NonterminalSubcommand
     terse::Option<"path", 'p', "sets path", &ToplevelOptions::pathing>>;
 
   using subcommands = std::tuple<Foo>;
+
+  static constexpr auto const name = "test";
+  static constexpr auto const usage = "usage test";
 };
 
 int
@@ -42,4 +45,6 @@ main(int argc, char** argv)
     auto const& foo = std::get<Foo>(scmds);
     std::cout << std::format("inner verbose: {}\n", foo.inner_verbose);
   }
+
+  std::cout << terse::print_usage<ToplevelOptions>();
 }
