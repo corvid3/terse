@@ -19,7 +19,7 @@ struct Foo : terse::TerminalSubcommand
 struct ToplevelOptions : terse::NonterminalSubcommand
 {
   bool verbose = false;
-  int m = 0;
+  std::optional<int> m;
   std::string pathing;
 
   using options = std::tuple<
@@ -41,10 +41,16 @@ main(int argc, char** argv)
 
   std::cout << std::format("tl verbose: {}\n", opts.verbose);
 
-  if (std::holds_alternative<Foo>(scmds)) {
-    auto const& foo = std::get<Foo>(scmds);
-    std::cout << std::format("inner verbose: {}\n", foo.inner_verbose);
-  }
+  if (not opts.m)
+    printf("hal\n");
 
-  std::cout << terse::print_usage<ToplevelOptions>();
+  if (opts.m)
+    printf("%i\n", opts.m);
+
+  // if (std::holds_alternative<Foo>(scmds)) {
+  //   auto const& foo = std::get<Foo>(scmds);
+  //   std::cout << std::format("inner verbose: {}\n", foo.inner_verbose);
+  // }
+
+  // std::cout << terse::print_usage<ToplevelOptions>();
 }

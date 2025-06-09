@@ -134,8 +134,7 @@ class _impl
 
   template<typename Command>
   void static apply_option(std::queue<Token>& toks,
-                           Command* opts,
-                           std::string Command::* ptr,
+                           std::string* ptr,
                            std::string_view longhand)
   {
     if (toks.empty())
@@ -149,23 +148,21 @@ class _impl
       throw std::runtime_error(
         std::format("expected string literal after option {}", longhand));
 
-    opts->*ptr = std::string(tok.what);
+    *ptr = std::string(tok.what);
   }
 
   template<typename Command>
   void static apply_option(std::queue<Token>& toks,
-                           Command* opts,
-                           bool Command::* ptr,
+                           bool* ptr,
                            std::string_view longhand)
   {
-    opts->*ptr = true;
+    *ptr = true;
   }
 
   template<typename Command, std::integral T>
     requires(not std::same_as<T, bool>)
   void static apply_option(std::queue<Token>& toks,
-                           Command* cmd,
-                           T Command::* ptr,
+                           T* ptr,
                            std::string_view longhand)
   {
     if (toks.empty())
@@ -179,15 +176,22 @@ class _impl
       throw std::runtime_error(
         std::format("expected integer literal after option {}", longhand));
 
-    T val;
-    if (std::from_chars(&*tok.what.begin(), &*tok.what.end(), val).ec ==
+    if (std::from_chars(&*tok.what.begin(), &*tok.what.end(), *ptr).ec ==
         std::errc::invalid_argument)
       throw std::runtime_error(
         std::format("option {} requested an integer argument, but did not get "
                     "a valid integer literal",
                     longhand));
+  }
 
-    cmd->*ptr = val;
+  template<typename Command, typename T>
+  void static apply_option(std::queue<Token>& toks,
+                           std::optional<T>* ptr,
+                           std::string_view longhand)
+  {
+    T m;
+    apply_option<Command>(toks, &m, longhand);
+    *ptr = std::move(m);
   }
 
   template<typename Command>
@@ -201,7 +205,7 @@ class _impl
               if (OPT::longhand != longhand)
                 return false;
 
-              apply_option<Command>(toks, cmd, OPT::class_ptr, longhand);
+              apply_option<Command>(toks, &(cmd->*OPT::class_ptr), longhand);
               return true;
             }(opts) || ...)) {
           throw std::runtime_error(
