@@ -4,7 +4,6 @@
 #include <concepts>
 #include <cstddef>
 #include <format>
-#include <iostream>
 #include <optional>
 #include <queue>
 #include <sstream>
@@ -18,9 +17,15 @@
 
 namespace terse {
 
-inline int comptime_id_hack = 0;
-template<typename T>
-inline const int hacki = comptime_id_hack++;
+// inline int comptime_id_hack = 0;
+// template<typename T>
+// inline const int hacki = comptime_id_hack++;
+// template<auto S>
+// struct tagged
+// {
+//   static inline int ID = hacki<tagged>;
+//   auto constexpr static inline VAL = S;
+// };
 
 template<std::size_t N>
 struct comptime_str
@@ -37,13 +42,6 @@ struct comptime_str
   char data[N - 1]{};
 };
 
-template<auto S>
-struct tagged
-{
-  static inline int ID = hacki<tagged>;
-  auto constexpr static inline VAL = S;
-};
-
 // name of the argument
 template<comptime_str LONGHAND,
          auto SHORTHAND,
@@ -58,10 +56,16 @@ struct Option
 };
 
 struct TerminalSubcommand
-{};
+{
+  // provide default empty subcommands
+  using subcommands = std::tuple<>;
+};
 
 struct NonterminalSubcommand
-{};
+{
+  // provide default empty subcommands
+  using subcommands = std::tuple<>;
+};
 
 template<typename T>
 concept is_terminal_subcommand = requires(T t) {
@@ -380,21 +384,36 @@ print_usage()
 
   what << cmd_usage << "\n\n";
 
-  what << "subcommands:\n";
+  if constexpr (std::tuple_size_v<typename CMD::subcommands> > 0) {
+    what << "subcommands:\n";
 
-  std::apply(
-    [&]<typename... SCMDS>(SCMDS&&...) {
-      (what << ... << std::format("\t{}\n", SCMDS::name));
-    },
-    typename CMD::subcommands());
+    std::apply(
+      [&]<typename... SCMDS>(SCMDS&&...) {
+        (what << ...
+              << std::format("    {}\x1b[20G{}\n", SCMDS::name, SCMDS::usage));
+      },
+      typename CMD::subcommands());
+  }
 
-  what << "\noptions:\n";
+  if constexpr (std::tuple_size_v<typename CMD::options> > 0) {
+    what << "options:\n";
 
-  std::apply(
-    [&]<typename... OPTS>(OPTS&&...) {
-      (what << ... << std::format("\t--{}\t{}\n", OPTS::longhand, OPTS::usage));
-    },
-    typename CMD::options());
+    auto const get_format = []<typename OPT>() static {
+      if constexpr (OPT::shorthand)
+        return std::format("    --{}\x1b[20G-{}\x1b[25G{}\n",
+                           OPT::longhand,
+                           *OPT::shorthand,
+                           OPT::usage);
+      else
+        return std::format("    --{}\x1b[25G{}\n", OPT::longhand, OPT::usage);
+    };
+
+    std::apply(
+      [&]<typename... OPTS>(OPTS&&...) {
+        (what << ... << get_format.template operator()<OPTS>());
+      },
+      typename CMD::options());
+  };
 
   return what.str();
 }
