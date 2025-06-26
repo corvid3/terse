@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <concepts>
 #include <cstddef>
 #include <format>
@@ -49,9 +50,9 @@ template<comptime_str LONGHAND,
          auto CLASS_PTR>
 struct Option
 {
-  static constexpr std::string_view longhand = LONGHAND;
+  static constexpr comptime_str longhand = LONGHAND;
   static constexpr std::optional<char> shorthand = SHORTHAND;
-  static constexpr std::string_view usage = USAGE;
+  static constexpr comptime_str usage = USAGE;
   static constexpr auto class_ptr = CLASS_PTR;
 };
 
@@ -366,23 +367,42 @@ execute(int argc, char** argv)
   return out_type{ lhs, rhs, bares };
 }
 
+template<typename T>
+struct member_pointer_destructure;
+
+template<typename T, typename C>
+struct member_pointer_destructure<T C::* const>
+{
+  using type = T;
+};
+
+template<typename T>
+using member_pointer_destructure_t =
+  typename member_pointer_destructure<T>::type;
+
+// TODO: descriptions of subcommands and options
+// need to bleed over to the next line, but the start
+// of the line must always be aligned.
+
 template<typename CMD>
 std::string
 print_usage()
 {
-  auto constexpr cmd_name = CMD::name;
-  auto constexpr cmd_usage = CMD::usage;
+  // simple name of the subcommand
+  auto constexpr cmd_name = (std::string_view)CMD::name;
+
+  // what bares/opts are taken
+  auto constexpr cmd_usage = (std::string_view)CMD::usage;
+
+  // short and sweet description
+  auto constexpr cmd_shortdesc = (std::string_view)CMD::short_description;
+
+  // lengthy explanation
+  auto constexpr cmd_description = (std::string_view)CMD::description;
 
   std::stringstream what;
 
-  if (std::apply([]<typename... Ts>(Ts&&...) { return sizeof...(Ts); },
-                 typename CMD::subcommands()) > 0) {
-    what << std::format("USAGE: {} [subcommand] [arguments]\n", cmd_name);
-  } else {
-    what << std::format("USAGE: {} [arguments]\n", cmd_name);
-  }
-
-  what << cmd_usage << "\n\n";
+  what << cmd_name << ' ' << cmd_usage << "\n\n" << cmd_description << "\n\n";
 
   if constexpr (std::tuple_size_v<typename CMD::subcommands> > 0) {
     what << "subcommands:\n";
@@ -390,22 +410,36 @@ print_usage()
     std::apply(
       [&]<typename... SCMDS>(SCMDS&&...) {
         (what << ...
-              << std::format("    {}\x1b[20G{}\n", SCMDS::name, SCMDS::usage));
+              << std::format("    {}\x1b[20G{}\n",
+                             (std::string_view)SCMDS::name,
+                             (std::string_view)SCMDS::short_description));
       },
       typename CMD::subcommands());
   }
 
   if constexpr (std::tuple_size_v<typename CMD::options> > 0) {
-    what << "options:\n";
+    what << "\n";
 
     auto const get_format = []<typename OPT>() static {
       if constexpr (OPT::shorthand)
-        return std::format("    --{}\x1b[20G-{}\x1b[25G{}\n",
-                           OPT::longhand,
-                           *OPT::shorthand,
-                           OPT::usage);
+        return std::format(
+          "    --{}\x1b[20G-{}\x1b[23G{}\x1b[30G{}\n",
+          (std::string_view)OPT::longhand,
+          *OPT::shorthand,
+          std::same_as<member_pointer_destructure_t<decltype(OPT::class_ptr)>,
+                       bool>
+            ? ""
+            : "<val>",
+          (std::string_view)OPT::usage);
       else
-        return std::format("    --{}\x1b[25G{}\n", OPT::longhand, OPT::usage);
+        return std::format(
+          "    --{}\x1b[23G{}\x1b[30G{}\n",
+          (std::string_view)OPT::longhand,
+          std::same_as<member_pointer_destructure_t<decltype(OPT::class_ptr)>,
+                       bool>
+            ? ""
+            : "<val>",
+          (std::string_view)OPT::usage);
     };
 
     std::apply(
