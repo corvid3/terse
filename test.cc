@@ -19,6 +19,17 @@ struct Foo : terse::TerminalSubcommand
   static constexpr auto const description = "";
 };
 
+struct Lower : terse::NonterminalSubcommand
+{
+  using subcommands = std::tuple<Foo>;
+  using options = std::tuple<>;
+
+  static constexpr auto const name = "test";
+  static constexpr auto const usage = "usage test";
+  static constexpr auto const short_description = "";
+  static constexpr auto const description = "";
+};
+
 struct ToplevelOptions : terse::NonterminalSubcommand
 {
   bool verbose = false;
@@ -31,7 +42,7 @@ struct ToplevelOptions : terse::NonterminalSubcommand
     terse::Option<"mem", 'm', "aa", &ToplevelOptions::m>,
     terse::Option<"path", 'p', "sets path", &ToplevelOptions::pathing>>;
 
-  using subcommands = std::tuple<Foo>;
+  using subcommands = std::tuple<Foo, Lower>;
 
   static constexpr auto const name = "test";
   static constexpr auto const usage = "usage test";
@@ -45,6 +56,9 @@ main(int argc, char** argv)
   auto [opts, scmds, bares] = terse::execute<ToplevelOptions>(argc, argv);
 
   std::cout << terse::print_usage<ToplevelOptions>();
+
+  auto [s, scmds2] = terse::get<Lower>(scmds);
+  Foo f = terse::get<Foo>(scmds2);
 
   // if (std::holds_alternative<Foo>(scmds)) {
   //   auto const& foo = std::get<Foo>(scmds);

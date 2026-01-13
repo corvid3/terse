@@ -157,9 +157,7 @@ class _impl
   }
 
   template<typename Command>
-  void static apply_option(std::queue<Token>& toks,
-                           bool* ptr,
-                           std::string_view longhand)
+  void static apply_option(std::queue<Token>&, bool* ptr, std::string_view)
   {
     *ptr = true;
   }
@@ -206,7 +204,7 @@ class _impl
   {
     std::apply(
       [&](auto&&... opts) {
-        if (not([&]<typename OPT>(OPT const& opt) -> bool {
+        if (not([&]<typename OPT>(OPT const&) -> bool {
               if (OPT::longhand != longhand)
                 return false;
 
@@ -223,15 +221,27 @@ class _impl
   template<typename T>
   struct tuple_to_variant_impl;
 
-  template<typename... Ts>
-  struct tuple_to_variant_impl<std::tuple<Ts...>>
-  {
-    using T = std::variant<std::monostate, Ts...>;
-  };
-
   template<typename SUBCOMMAND>
   using tuple_to_variant =
     tuple_to_variant_impl<typename SUBCOMMAND::subcommands>::T;
+
+  template<typename COMMAND>
+    requires is_terminal_subcommand<COMMAND>
+  static COMMAND selector_impl(COMMAND);
+
+  template<typename COMMAND>
+    requires is_nonterminal_subcommand<COMMAND>
+  static std::pair<COMMAND, tuple_to_variant<COMMAND>> selector_impl(COMMAND);
+  static std::monostate selector_impl(std::monostate);
+
+  template<typename COMMAND>
+  using Selector = decltype(selector_impl(std::declval<COMMAND>()));
+
+  template<typename... Ts>
+  struct tuple_to_variant_impl<std::tuple<Ts...>>
+  {
+    using T = std::variant<std::monostate, Selector<Ts>...>;
+  };
 
   template<is_nonterminal_subcommand COMMAND>
   std::pair<COMMAND, tuple_to_variant<COMMAND>> static parse(
@@ -330,6 +340,11 @@ class _impl
 
   template<typename TOPLEVEL_SUBCOMMAND>
   friend auto execute(int argc, char** argv);
+
+  template<typename scmd, typename tuple>
+  friend decltype(auto) get(tuple& t);
+  template<typename scmd, typename tuple>
+  friend decltype(auto) holds(tuple& t);
 };
 
 template<typename TOPLEVEL_SUBCOMMAND>
@@ -395,7 +410,7 @@ print_usage()
   auto constexpr cmd_usage = (std::string_view)CMD::usage;
 
   // short and sweet description
-  auto constexpr cmd_shortdesc = (std::string_view)CMD::short_description;
+  // auto constexpr cmd_shortdesc = (std::string_view)CMD::short_description;
 
   // lengthy explanation
   auto constexpr cmd_description = (std::string_view)CMD::description;
@@ -450,6 +465,20 @@ print_usage()
   };
 
   return what.str();
+}
+
+template<typename scmd, typename tuple>
+decltype(auto)
+get(tuple& t)
+{
+  return std::get<_impl::Selector<scmd>>(t);
+}
+
+template<typename scmd, typename tuple>
+decltype(auto)
+holds(tuple& t)
+{
+  return std::holds_alternative<_impl::Selector<scmd>>(t);
 }
 
 };
