@@ -1,3 +1,8 @@
 #!/bin/bash
 
-sudo cp include/terse.hh /usr/local/include/
+if [ ! -d $HOME/.hewg/bootstrap/crow.terse ]; then
+  mkdir -p $HOME/.hewg/bootstrap/crow.terse
+fi
+
+cp include/terse.hh $HOME/.hewg/bootstrap/crow.terse/
+
