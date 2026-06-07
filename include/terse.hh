@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <concepts>
 #include <cstddef>
@@ -12,34 +13,22 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace terse {
 
-// inline int comptime_id_hack = 0;
-// template<typename T>
-// inline const int hacki = comptime_id_hack++;
-// template<auto S>
-// struct tagged
-// {
-//   static inline int ID = hacki<tagged>;
-//   auto constexpr static inline VAL = S;
-// };
-
 template<std::size_t N>
 struct comptime_str
 {
   constexpr comptime_str(char const (&str)[N])
-  // ->comptime_str<N, hacki<comptime_str>>
   {
-    // -1 cuz null terminator
     std::copy(str, str + N - 1, data);
   };
 
   constexpr operator std::string_view() const { return { data, data + N - 1 }; }
-  // constexpr operator char const*() const { return data; }
   char data[N - 1]{};
 };
 
@@ -56,26 +45,14 @@ struct Option
   static constexpr auto class_ptr = CLASS_PTR;
 };
 
-struct TerminalSubcommand
-{
-  // provide default empty subcommands
-  using subcommands = std::tuple<>;
-};
-
-struct NonterminalSubcommand
-{
-  // provide default empty subcommands
-  using subcommands = std::tuple<>;
-};
+template<typename T>
+concept is_nonterminal_subcommand = requires(T t) { t.terse_subcmds; };
+template<typename T>
+concept is_terminal_subcommand = !is_nonterminal_subcommand<T>;
 
 template<typename T>
-concept is_terminal_subcommand = requires(T t) {
-  { TerminalSubcommand{ t } } -> std::same_as<TerminalSubcommand>;
-};
-
-template<typename T>
-concept is_nonterminal_subcommand = requires(T t) {
-  { NonterminalSubcommand{ t } } -> std::same_as<NonterminalSubcommand>;
+concept has_bares = requires(T t) {
+  requires std::same_as<decltype(t.terse_bares), std::vector<std::string>>;
 };
 
 class _impl
@@ -92,13 +69,8 @@ class _impl
   {
     if (what.starts_with("--"))
       queue.push({ true, false, what.substr(2) });
-
-    // shorthand parsing requires an update, for now
-    // it is very simple.
-    // eventually, one needs to be able to "stack" shorthand
     else if (what.starts_with('-'))
       queue.push({ true, true, what.substr(1) });
-
     else
       queue.push({ false, false, what });
   }
@@ -107,7 +79,7 @@ class _impl
 
   // T should be a tuple of Options
   template<typename T>
-  std::string_view static convert_to_longhand(char const c)
+  auto static convert_to_longhand(char const c) -> std::string_view
   {
     return std::apply(
       [&](auto... m) -> std::string_view {
@@ -157,7 +129,9 @@ class _impl
   }
 
   template<typename Command>
-  void static apply_option(std::queue<Token>&, bool* ptr, std::string_view)
+  void static apply_option(std::queue<Token>& /*unused*/,
+                           bool* ptr,
+                           std::string_view /*unused*/)
   {
     *ptr = true;
   }
@@ -180,11 +154,12 @@ class _impl
         std::format("expected integer literal after option {}", longhand));
 
     if (std::from_chars(&*tok.what.begin(), &*tok.what.end(), *ptr).ec ==
-        std::errc::invalid_argument)
+        std::errc::invalid_argument) {
       throw std::runtime_error(
         std::format("option {} requested an integer argument, but did not get "
                     "a valid integer literal",
                     longhand));
+    }
   }
 
   template<typename Command, typename T>
@@ -219,38 +194,41 @@ class _impl
   }
 
   template<typename T>
-  struct tuple_to_variant_impl;
-
-  template<typename SUBCOMMAND>
-  using tuple_to_variant =
-    tuple_to_variant_impl<typename SUBCOMMAND::subcommands>::T;
-
-  template<typename COMMAND>
-    requires is_terminal_subcommand<COMMAND>
-  static COMMAND selector_impl(COMMAND);
-
-  template<typename COMMAND>
-    requires is_nonterminal_subcommand<COMMAND>
-  static std::pair<COMMAND, tuple_to_variant<COMMAND>> selector_impl(COMMAND);
-  static std::monostate selector_impl(std::monostate);
-
-  template<typename COMMAND>
-  using Selector = decltype(selector_impl(std::declval<COMMAND>()));
+  struct vtt;
 
   template<typename... Ts>
-  struct tuple_to_variant_impl<std::tuple<Ts...>>
+  struct vtt<std::variant<Ts...>>
   {
-    using T = std::variant<std::monostate, Selector<Ts>...>;
+    using T = std::tuple<Ts...>;
   };
 
+  template<typename T>
+  using variant_to_tuple = vtt<T>::T;
+
+  template<std::size_t I = 0, typename V>
+  auto static subcmdparse(auto& toks,
+                          auto& out_bares,
+                          std::string_view scmd_text) -> V
+  {
+    if constexpr (I >= std::variant_size_v<V>)
+      throw std::runtime_error(std::format("unknown subcommand {}", scmd_text));
+    else {
+      using SCMD = std::variant_alternative_t<I, V>;
+      if constexpr (std::same_as<SCMD, std::monostate>)
+        return subcmdparse<I + 1, V>(toks, out_bares, scmd_text);
+      else {
+        if (SCMD::name == scmd_text)
+          return V(parse<SCMD>(toks, out_bares));
+        return subcmdparse<I + 1, V>(toks, out_bares, scmd_text);
+      }
+    }
+  }
+
   template<is_nonterminal_subcommand COMMAND>
-  std::pair<COMMAND, tuple_to_variant<COMMAND>> static parse(
-    std::queue<Token>& toks,
-    std::vector<std::string>& out_bares)
+  auto static parse(std::queue<Token>& toks,
+                    std::vector<std::string>& out_bares) -> COMMAND
   {
     COMMAND cmd;
-
-    tuple_to_variant<COMMAND> subcommands = std::monostate{};
 
     for (;;) {
       if (toks.empty())
@@ -266,11 +244,12 @@ class _impl
       {
         std::string_view longhand;
 
-        if (tok.is_shorthand)
+        if (tok.is_shorthand) {
           longhand =
             convert_to_longhand<typename COMMAND::options>(tok.what.front());
-        else
+        } else {
           longhand = tok.what;
+        }
 
         apply_longhand(toks, &cmd, longhand);
       }
@@ -279,32 +258,20 @@ class _impl
     // just return the subcommand and the
     // monostate to declare no commands after
     if (toks.empty())
-      return { cmd, subcommands };
+      return cmd;
 
     auto scmd_text = toks.front().what;
     toks.pop();
 
-    std::apply(
-      [&](auto&&... scmds) {
-        if (not(... || [&]<typename SCMD>(SCMD const&) {
-              if (SCMD::name == scmd_text) {
-                subcommands = parse<SCMD>(toks, out_bares);
-                return true;
-              }
-              return false;
-            }(scmds))) {
-          throw std::runtime_error(
-            std::format("unknown subcommand {}", scmd_text));
-        };
-      },
-      typename COMMAND::subcommands());
+    cmd.terse_subcmds = subcmdparse<0, decltype(COMMAND::terse_subcmds)>(
+      toks, out_bares, scmd_text);
 
-    return { cmd, subcommands };
+    return cmd;
   }
 
   template<is_terminal_subcommand COMMAND>
-  COMMAND static parse(std::queue<Token>& toks,
-                       std::vector<std::string>& out_bares)
+  auto static parse(std::queue<Token>& toks,
+                    std::vector<std::string>& out_bares) -> COMMAND
   {
     COMMAND cmd;
 
@@ -324,15 +291,17 @@ class _impl
       if (tok.is_opt) {
         std::string_view longhand;
 
-        if (tok.is_shorthand)
+        if (tok.is_shorthand) {
           longhand =
             convert_to_longhand<typename COMMAND::options>(tok.what.front());
-        else
+        } else {
           longhand = tok.what;
+        }
 
         apply_longhand(toks, &cmd, longhand);
-      } else
-        out_bares.push_back(std::string(tok.what));
+      } else {
+        out_bares.emplace_back(tok.what);
+      }
     }
 
     return cmd;
@@ -342,21 +311,30 @@ class _impl
   friend auto execute(int argc, char** argv);
 
   template<typename scmd, typename tuple>
-  friend decltype(auto) get(tuple& t);
+  friend auto get(tuple& t) -> decltype(auto);
   template<typename scmd, typename tuple>
-  friend decltype(auto) holds(tuple& t);
+  friend auto holds(tuple& t) -> decltype(auto);
+
+  template<typename CMD>
+  friend auto print_usage() -> std::string;
+
+  static void set_bares(std::vector<std::string> const& bares,
+                        has_bares auto& i)
+  {
+    i.terse_bares = bares;
+  }
+
+  static void set_bares(const std::vector<std::string>& /*unused*/,
+                        auto const& /*unused*/) {};
 };
 
 template<typename TOPLEVEL_SUBCOMMAND>
 auto
 execute(int argc, char** argv)
 {
-  using out_type_inner = decltype(_impl::parse<TOPLEVEL_SUBCOMMAND>(
+  using out_type = decltype(_impl::parse<TOPLEVEL_SUBCOMMAND>(
     std::declval<std::queue<_impl::Token>&>(),
     std::declval<std::vector<std::string>&>()));
-
-  using out_type = decltype(std::tuple_cat(
-    std::declval<out_type_inner>(), std::tuple(std::vector<std::string>())));
 
   if (argc == 0)
     throw std::runtime_error("malformed argc in terse parse");
@@ -377,9 +355,9 @@ execute(int argc, char** argv)
   // appear after a terminal subcommand, but arguments
   // can appear anywhere
   std::vector<std::string> bares;
-  auto&& [lhs, rhs] = _impl::parse<TOPLEVEL_SUBCOMMAND>(tok_queue, bares);
-
-  return out_type{ lhs, rhs, bares };
+  auto out = _impl::parse<TOPLEVEL_SUBCOMMAND>(tok_queue, bares);
+  _impl::set_bares(bares, out);
+  return out;
 }
 
 template<typename T>
@@ -395,13 +373,9 @@ template<typename T>
 using member_pointer_destructure_t =
   typename member_pointer_destructure<T>::type;
 
-// TODO: descriptions of subcommands and options
-// need to bleed over to the next line, but the start
-// of the line must always be aligned.
-
 template<typename CMD>
-std::string
-print_usage()
+auto
+print_usage() -> std::string
 {
   // simple name of the subcommand
   auto constexpr cmd_name = (std::string_view)CMD::name;
@@ -419,24 +393,26 @@ print_usage()
 
   what << cmd_name << ' ' << cmd_usage << "\n\n" << cmd_description << "\n\n";
 
-  if constexpr (std::tuple_size_v<typename CMD::subcommands> > 0) {
-    what << "subcommands:\n";
-
-    std::apply(
-      [&]<typename... SCMDS>(SCMDS&&...) {
-        (what << ...
-              << std::format("    {}\x1b[20G{}\n",
-                             (std::string_view)SCMDS::name,
-                             (std::string_view)SCMDS::short_description));
-      },
-      typename CMD::subcommands());
-  }
+  /* FIXME: print usage for subcommands */
+  // if constexpr (std::tuple_size_v<
+  //                 _impl::variant_to_tuple<typename CMD::terse_subcmds>> > 0)
+  //                 {
+  //   what << "subcommands:\n";
+  //   std::apply(
+  //     [&]<typename... SCMDS>(SCMDS&&...) {
+  //       (what << ...
+  //             << std::format("    {}\x1b[20G{}\n",
+  //                            (std::string_view)SCMDS::name,
+  //                            (std::string_view)SCMDS::short_description));
+  //     },
+  //     _impl::variant_to_tuple<typename CMD::terse_subcmds>());
+  // }
 
   if constexpr (std::tuple_size_v<typename CMD::options> > 0) {
     what << "\n";
 
     auto const get_format = []<typename OPT>() static {
-      if constexpr (OPT::shorthand)
+      if constexpr (OPT::shorthand) {
         return std::format(
           "    --{}\x1b[20G-{}\x1b[23G{}\x1b[30G{}\n",
           (std::string_view)OPT::longhand,
@@ -446,7 +422,7 @@ print_usage()
             ? ""
             : "<val>",
           (std::string_view)OPT::usage);
-      else
+      } else {
         return std::format(
           "    --{}\x1b[23G{}\x1b[30G{}\n",
           (std::string_view)OPT::longhand,
@@ -455,6 +431,7 @@ print_usage()
             ? ""
             : "<val>",
           (std::string_view)OPT::usage);
+      }
     };
 
     std::apply(
@@ -467,18 +444,18 @@ print_usage()
   return what.str();
 }
 
-template<typename scmd, typename tuple>
-decltype(auto)
-get(tuple& t)
-{
-  return std::get<_impl::Selector<scmd>>(t);
-}
+// template<typename scmd, typename tuple>
+// auto
+// get(tuple& t) -> decltype(auto)
+// {
+//   return std::get<_impl::Selector<scmd>>(t);
+// }
 
-template<typename scmd, typename tuple>
-decltype(auto)
-holds(tuple& t)
-{
-  return std::holds_alternative<_impl::Selector<scmd>>(t);
-}
+// template<typename scmd, typename tuple>
+// auto
+// holds(tuple& t) -> decltype(auto)
+// {
+//   return std::holds_alternative<_impl::Selector<scmd>>(t);
+// }
 
 };

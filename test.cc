@@ -5,12 +5,18 @@
 #include <tuple>
 #include <variant>
 
-struct Foo : terse::TerminalSubcommand
+struct m
+{
+  int s;
+};
+
+struct Foo
 {
   constexpr static auto name = "foo";
   constexpr static auto usage = "foo";
 
   bool inner_verbose = false;
+  m s;
 
   using options = std::tuple<
     terse::
@@ -19,7 +25,7 @@ struct Foo : terse::TerminalSubcommand
   static constexpr auto const description = "";
 };
 
-struct Lower : terse::NonterminalSubcommand
+struct Lower
 {
   using subcommands = std::tuple<Foo>;
   using options = std::tuple<>;
@@ -30,8 +36,11 @@ struct Lower : terse::NonterminalSubcommand
   static constexpr auto const description = "";
 };
 
-struct ToplevelOptions : terse::NonterminalSubcommand
+struct ToplevelOptions
 {
+  std::variant<std::monostate, Lower, Foo> terse_subcmds;
+  std::vector<std::string> terse_bares;
+
   bool verbose = false;
   std::optional<int> m;
   std::string pathing;
@@ -42,28 +51,19 @@ struct ToplevelOptions : terse::NonterminalSubcommand
     terse::Option<"mem", 'm', "aa", &ToplevelOptions::m>,
     terse::Option<"path", 'p', "sets path", &ToplevelOptions::pathing>>;
 
-  using subcommands = std::tuple<Foo, Lower>;
-
   static constexpr auto const name = "test";
   static constexpr auto const usage = "usage test";
   static constexpr auto const short_description = "";
   static constexpr auto const description = "";
 };
 
-int
-main(int argc, char** argv)
+auto
+main(int argc, char** argv) -> int
 {
-  auto [opts, scmds, bares] = terse::execute<ToplevelOptions>(argc, argv);
+  auto const out = terse::execute<ToplevelOptions>(argc, argv);
 
   std::cout << terse::print_usage<ToplevelOptions>();
 
-  auto [s, scmds2] = terse::get<Lower>(scmds);
-  Foo f = terse::get<Foo>(scmds2);
-
-  // if (std::holds_alternative<Foo>(scmds)) {
-  //   auto const& foo = std::get<Foo>(scmds);
-  //   std::cout << std::format("inner verbose: {}\n", foo.inner_verbose);
-  // }
-
-  // std::cout << terse::print_usage<ToplevelOptions>();
+  // auto [s, scmds2] = terse::get<Lower>(scmds);
+  // Foo f = terse::get<Foo>(scmds2);
 }
